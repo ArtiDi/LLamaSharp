@@ -2,8 +2,6 @@
 using System.Buffers;
 using System.Runtime.InteropServices;
 
-using llama_token = System.Int32;
-
 namespace LLama.Native
 {
     /// <summary>
@@ -41,7 +39,7 @@ namespace LLama.Native
         {
             var candidates = new LLamaTokenData[logits.Length];
             for (var token_id = 0; token_id < logits.Length; token_id++)
-                candidates[token_id] = new LLamaTokenData(token_id, logits[token_id], 0.0f);
+                candidates[token_id] = new LLamaTokenData((LLamaToken)token_id, logits[token_id], 0.0f);
 
             return new LLamaTokenDataArray(candidates);
         }
@@ -50,7 +48,7 @@ namespace LLama.Native
         /// Overwrite the logit values for all given tokens
         /// </summary>
         /// <param name="values">tuples of token and logit value to overwrite</param>
-        public void OverwriteLogits(ReadOnlySpan<(llama_token token, float logit)> values)
+        public void OverwriteLogits(ReadOnlySpan<(LLamaToken token, float logit)> values)
         {
             if (values.Length == 0)
                 return;
@@ -172,18 +170,68 @@ namespace LLama.Native
         /// <param name="penalty_repeat"></param>
         /// <param name="penalty_freq"></param>
         /// <param name="penalty_present"></param>
-        public void RepetitionPenalty(SafeLLamaContextHandle context, ReadOnlySpan<llama_token> last_tokens, float penalty_repeat, float penalty_freq, float penalty_present)
+        public void RepetitionPenalty(SafeLLamaContextHandle context, ReadOnlySpan<LLamaToken> last_tokens, float penalty_repeat, float penalty_freq, float penalty_present)
         {
             unsafe
             {
                 using (LLamaTokenDataArrayNative.Create(this, out var st))
                 {
-                    fixed (int* last_tokens_handle = last_tokens)
+                    fixed (LLamaToken* last_tokens_handle = last_tokens)
                     {
                         NativeApi.llama_sample_repetition_penalties(context, ref st, last_tokens_handle, (ulong)last_tokens.Length, penalty_repeat, penalty_freq, penalty_present);
                         sorted = st.sorted;
                     }
                 }
+            }
+        }
+
+        /// <summary>
+        /// Apply classifier-free guidance to the logits as described in academic paper "Stay on topic with Classifier-Free Guidance" https://arxiv.org/abs/2306.17806
+        /// </summary>
+        /// <param name="context"></param>
+        /// <param name="guidanceLogits">Logits extracted from a separate context from the same model.
+        /// Other than a negative prompt at the beginning, it should have all generated and user input tokens copied from the main context.</param>
+        /// <param name="guidance">Guidance strength. 0 means no guidance, higher values applies stronger guidance</param>
+        public void Guidance(SafeLLamaContextHandle context, ReadOnlySpan<float> guidanceLogits, float guidance)
+        {
+            if (guidanceLogits.Length != data.Length)
+                throw new ArgumentException("Guidance logits count must equal vocabulary size", nameof(guidanceLogits));
+
+            if (guidance < 0)
+                throw new ArgumentOutOfRangeException(nameof(guidance), "Guidance strength must be greater than or equal to zero");
+
+            // this method accepts 0 (no guidance), higher means more. llama.cpp expects 1 (no guidance), higher means more
+            // Add one to move up to the llama.cpp baseline.
+            guidance += 1;
+
+            // We need logits array, which we don't have at this point.
+            // Copy them to a temporary array, apply guidance, then copy them back.
+            var logits = ArrayPool<float>.Shared.Rent(context.VocabCount);
+            try
+            {
+                // Copy logits into a temporary array
+                for (var i = 0; i < data.Length; i++)
+                {
+                    ref var item = ref data.Span[i];
+                    logits[(int)item.id] = item.logit;
+                }
+
+                // Apply guidance
+                NativeApi.llama_sample_apply_guidance(context, logits, guidanceLogits, guidance);
+
+                // Copy logits back into data array
+                for (var i = 0; i < data.Length; i++)
+                {
+                    ref var item = ref data.Span[i];
+                    item.logit = logits[(int)item.id];
+                }
+
+                // No longer sorted since we just mutated logits!
+                sorted = false;
+            }
+            finally
+            {
+                ArrayPool<float>.Shared.Return(logits);
             }
         }
 
@@ -220,7 +268,7 @@ namespace LLama.Native
         /// </summary>
         /// <param name="context"></param>
         /// <returns></returns>
-        public int SampleToken(SafeLLamaContextHandle context)
+        public LLamaToken SampleToken(SafeLLamaContextHandle context)
         {
             using (LLamaTokenDataArrayNative.Create(this, out var st))
             {
@@ -235,7 +283,7 @@ namespace LLama.Native
         /// </summary>
         /// <param name="context"></param>
         /// <returns></returns>
-        public int SampleTokenGreedy(SafeLLamaContextHandle context)
+        public LLamaToken SampleTokenGreedy(SafeLLamaContextHandle context)
         {
             using (LLamaTokenDataArrayNative.Create(this, out var st))
             {
@@ -254,7 +302,7 @@ namespace LLama.Native
         /// <param name="m">The number of tokens considered in the estimation of `s_hat`. This is an arbitrary value that is used to calculate `s_hat`, which in turn helps to calculate the value of `k`. In the paper, they use `m = 100`, but you can experiment with different values to see how it affects the performance of the algorithm.</param>
         /// <param name="mu">Maximum cross-entropy. This value is initialized to be twice the target cross-entropy (`2 * tau`) and is updated in the algorithm based on the error between the target and observed surprisal.</param>
         /// <returns></returns>
-        public int SampleTokenMirostat(SafeLLamaContextHandle context, float tau, float eta, int m, ref float mu)
+        public LLamaToken SampleTokenMirostat(SafeLLamaContextHandle context, float tau, float eta, int m, ref float mu)
         {
             using (LLamaTokenDataArrayNative.Create(this, out var st))
             {
@@ -272,7 +320,7 @@ namespace LLama.Native
         /// <param name="eta">The learning rate used to update `mu` based on the error between the target and observed surprisal of the sampled word. A larger learning rate will cause `mu` to be updated more quickly, while a smaller learning rate will result in slower updates.</param>
         /// <param name="mu">Maximum cross-entropy. This value is initialized to be twice the target cross-entropy (`2 * tau`) and is updated in the algorithm based on the error between the target and observed surprisal.</param>
         /// <returns></returns>
-        public int SampleTokenMirostat2(SafeLLamaContextHandle context, float tau, float eta, ref float mu)
+        public LLamaToken SampleTokenMirostat2(SafeLLamaContextHandle context, float tau, float eta, ref float mu)
         {
             using (LLamaTokenDataArrayNative.Create(this, out var st))
             {

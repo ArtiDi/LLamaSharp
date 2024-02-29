@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -e
 
 is_minor="$1"    # type is "minor" or "patch"
 is_patch="$2"    # type is "minor" or "patch"
@@ -22,8 +22,7 @@ fi
 
 mkdir ./temp;
 mkdir ./temp/runtimes;
-# For sure it could be done better but cp -R did not work on osx
-cp  ./LLama/runtimes/*.* ./temp/runtimes/;
+cp ./LLama/runtimes ./temp -R;
 cp ./LLama/runtimes/build/*.* ./temp/;
 
 # get the current version
@@ -45,7 +44,8 @@ if [[ $type == "minor" ]]; then
         updated_version="${version%%.*}.$b.0"
         echo "Updated version: $updated_version"
     else
-        echo "Invalid version format" exit 1
+        echo "Invalid version format"
+        exit 1
     fi
 elif [[ $type == "patch" ]]; then
     regex="([0-9]+)$"
@@ -71,10 +71,11 @@ dotnet pack ./LLama.KernelMemory/LLamaSharp.KernelMemory.csproj -c Release -o ./
 
 # pack the backends
 cd temp
-nuget pack LLamaSharp.Backend.Cpu.nuspec -version $updated_version
-nuget pack LLamaSharp.Backend.Cuda11.nuspec -version $updated_version
-nuget pack LLamaSharp.Backend.Cuda12.nuspec -version $updated_version
-
+for nuspec in *.nuspec
+do
+  echo "Packing $nuspec"
+  nuget pack $nuspec -version $updated_version
+done
 
 cd ..
 exit 0

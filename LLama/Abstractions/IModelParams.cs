@@ -2,6 +2,7 @@
 using System.Buffers;
 using System.Collections;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -15,39 +16,58 @@ namespace LLama.Abstractions
     public interface IModelParams
     {
         /// <summary>
-        /// the GPU that is used for scratch and small tensors
+        /// main_gpu interpretation depends on split_mode:
+        /// <list type="bullet">
+        ///     <item>
+        ///         <term>None</term>
+        ///         <description>The GPU that is used for the entire mode.</description>
+        ///     </item>
+        ///     <item>
+        ///         <term>Row</term>
+        ///         <description>The GPU that is used for small tensors and intermediate results.</description>
+        ///     </item>
+        ///     <item>
+        ///         <term>Layer</term>
+        ///         <description>Ignored.</description>
+        ///     </item>
+        /// </list>
         /// </summary>
         int MainGpu { get; set; }
 
         /// <summary>
+        /// How to split the model across multiple GPUs
+        /// </summary>
+        GPUSplitMode SplitMode { get; }
+
+        /// <summary>
         /// Number of layers to run in VRAM / GPU memory (n_gpu_layers)
         /// </summary>
-        int GpuLayerCount { get; set; }
+        int GpuLayerCount { get; }
 
         /// <summary>
         /// Use mmap for faster loads (use_mmap)
         /// </summary>
-        bool UseMemorymap { get; set; }
+        bool UseMemorymap { get; }
 
         /// <summary>
         /// Use mlock to keep model in memory (use_mlock)
         /// </summary>
-        bool UseMemoryLock { get; set; }
+        bool UseMemoryLock { get; }
 
         /// <summary>
         /// Model path (model)
         /// </summary>
-        string ModelPath { get; set; }
+        string ModelPath { get; }
 
         /// <summary>
         /// how split tensors should be distributed across GPUs
         /// </summary>
-        TensorSplitsCollection TensorSplits { get; set; }
+        TensorSplitsCollection TensorSplits { get; }
 
         /// <summary>
         /// Load vocab only (no weights)
         /// </summary>
-        bool VocabOnly { get; set; }
+        bool VocabOnly { get; }
 
         /// <summary>
         /// List of LoRA adapters to apply
@@ -57,7 +77,7 @@ namespace LLama.Abstractions
         /// <summary>
         /// base model path for the lora adapter (lora_base)
         /// </summary>
-        string LoraBase { get; set; }
+        string LoraBase { get; }
 
         /// <summary>
         /// Override specific metadata items in the model
@@ -214,7 +234,7 @@ namespace LLama.Abstractions
         /// <summary>
         /// Get the key being overriden by this override
         /// </summary>
-        public string Key { get; init; }
+        public string Key { get; }
 
         internal LLamaModelKvOverrideType Type { get; }
 
@@ -272,11 +292,11 @@ namespace LLama.Abstractions
                     dest.BoolValue = _valueBool ? -1L : 0;
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException();
+                    throw new InvalidEnumArgumentException($"Unknown {nameof(LLamaModelKvOverrideType)} value: {Type}");
             }
         }
 
-        internal void WriteValue(Utf8JsonWriter writer, JsonSerializerOptions options)
+        internal void WriteValue(Utf8JsonWriter writer)
         {
             switch (Type)
             {
@@ -290,7 +310,7 @@ namespace LLama.Abstractions
                     writer.WriteBooleanValue(_valueBool);
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException();
+                    throw new InvalidEnumArgumentException($"Unknown {nameof(LLamaModelKvOverrideType)} value: {Type}");
             }
         }
     }
@@ -323,7 +343,7 @@ namespace LLama.Abstractions
                 writer.WriteNumber("Type", (int)value.Type);
                 writer.WriteString("Key", value.Key);
                 writer.WritePropertyName("Value");
-                value.WriteValue(writer, options);
+                value.WriteValue(writer);
             }
             writer.WriteEndObject();
         }

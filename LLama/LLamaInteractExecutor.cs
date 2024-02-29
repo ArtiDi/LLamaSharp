@@ -8,19 +8,19 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
+using LLama.Exceptions;
 using LLama.Extensions;
 using Microsoft.Extensions.Logging;
 
 namespace LLama
 {
-    using llama_token = Int32;
     /// <summary>
     /// The LLama executor for interactive mode.
     /// </summary>
     public class InteractiveExecutor : StatefulExecutorBase
     {
         private bool _is_prompt_run = true;
-        private readonly llama_token _llama_token_newline;
+        private readonly LLamaToken _llama_token_newline;
 
         /// <summary>
         /// 
@@ -63,7 +63,7 @@ namespace LLama
                 _is_prompt_run = state.IsPromptRun;
                 _consumedTokensCount = state.ConsumedTokensCount;
                 _embeds = state.Embeds;
-                _last_n_tokens = new FixedSizeQueue<llama_token>(state.LastTokensCapacity, state.LastTokens);
+                _last_n_tokens = new FixedSizeQueue<LLamaToken>(state.LastTokensCapacity, state.LastTokens);
                 _n_matching_session_tokens = state.MatchingSessionTokensCount;
                 _pastTokensCount = state.PastTokensCount;
                 _pathSession = state.SessionFilePath;
@@ -156,8 +156,10 @@ namespace LLama
         }
 
         /// <inheritdoc />
-        protected override async Task InferInternal(IInferenceParams inferenceParams, InferStateArgs args)
+        protected override Task InferInternal(IInferenceParams inferenceParams, InferStateArgs args)
         {
+            var batch = new LLamaBatch();
+
             if (_embeds.Count > 0)
             {
                 _is_prompt_run = false;
@@ -167,7 +169,10 @@ namespace LLama
                 }
 
                 TryReuseMathingPrefix();
-                _pastTokensCount = Context.Eval(_embeds, _pastTokensCount);
+
+                var (result, _) = Context.NativeHandle.Decode(_embeds, LLamaSeqId.Zero, batch, ref _pastTokensCount);
+                if (result != DecodeResult.Ok)
+                    throw new LLamaDecodeError(result);
 
                 if (_embeds.Count > 0 && !string.IsNullOrEmpty(_pathSession))
                 {
@@ -180,7 +185,7 @@ namespace LLama
 
             if (_embed_inps.Count <= _consumedTokensCount && !args.WaitForInput)
             {
-                var repeat_last_n = inferenceParams.RepeatLastTokensCount < 0 ? Context.ContextSize : inferenceParams.RepeatLastTokensCount;
+                var repeat_last_n = inferenceParams.RepeatLastTokensCount < 0 ? (int)Context.ContextSize : inferenceParams.RepeatLastTokensCount;
 
                 // optionally save the session on first sample (for faster prompt loading next time)
                 if (!string.IsNullOrEmpty(_pathSession) && args.NeedToSaveSession)
@@ -189,14 +194,15 @@ namespace LLama
                     SaveSessionFile(_pathSession);
                 }
 
-                llama_token id;
+                LLamaToken id;
                 if (inferenceParams.SamplingPipeline is not null)
                 {
-                    id = inferenceParams.SamplingPipeline.Sample(Context.NativeHandle, Context.NativeHandle.GetLogits(), _last_n_tokens.ToArray());
+                    id = inferenceParams.SamplingPipeline.Sample(Context.NativeHandle, Context.NativeHandle.GetLogitsIth(batch.TokenCount - 1), _last_n_tokens.ToArray());
+                    inferenceParams.SamplingPipeline.Accept(Context.NativeHandle, id);
                 }
                 else
                 {
-                    var tokenDataArray = Context.ApplyPenalty(_last_n_tokens, inferenceParams.LogitBias, repeat_last_n,
+                    var tokenDataArray = Context.ApplyPenalty(batch.TokenCount - 1, _last_n_tokens, inferenceParams.LogitBias, repeat_last_n,
                         inferenceParams.RepeatPenalty, inferenceParams.FrequencyPenalty, inferenceParams.PresencePenalty, inferenceParams.PenalizeNL);
 
                     var mu = MirostatMu;
@@ -238,6 +244,8 @@ namespace LLama
                     }
                 }
             }
+
+            return Task.CompletedTask;
         }
 
         /// <summary>

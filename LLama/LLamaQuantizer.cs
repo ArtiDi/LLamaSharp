@@ -20,8 +20,7 @@ namespace LLama
         /// <param name="quantizeOutputTensor"></param>
         /// <returns>Whether the quantization is successful.</returns>
         /// <exception cref="ArgumentException"></exception>
-        public static unsafe bool Quantize(string srcFileName, string dstFilename, LLamaFtype ftype, int nthread = -1, bool allowRequantize = true, 
-                                           bool quantizeOutputTensor = false)
+        public static bool Quantize(string srcFileName, string dstFilename, LLamaFtype ftype, int nthread = -1, bool allowRequantize = true, bool quantizeOutputTensor = false)
         {
             if (!ValidateFtype(ftype))
             {
@@ -34,7 +33,10 @@ namespace LLama
             quantizeParams.nthread = nthread;
             quantizeParams.allow_requantize = allowRequantize;
             quantizeParams.quantize_output_tensor = quantizeOutputTensor;
-            return NativeApi.llama_model_quantize(srcFileName, dstFilename, &quantizeParams) == 0;
+            unsafe
+            {
+                return NativeApi.llama_model_quantize(srcFileName, dstFilename, &quantizeParams) == 0;
+            }
         }
 
         /// <summary>
@@ -57,7 +59,7 @@ namespace LLama
         private static bool ValidateFtype(LLamaFtype ftype)
         {
             // Validation copies from here:
-            // https://github.com/ggerganov/llama.cpp/blob/e59fcb2bc129881f4a269fee748fb38bce0a64de/llama.cpp#L2960
+            // https://github.com/ggerganov/llama.cpp/blob/d71ac90985854b0905e1abba778e407e17f9f887/llama.cpp#L9613
 
             switch (ftype)
             {
@@ -68,15 +70,27 @@ namespace LLama
                 case LLamaFtype.LLAMA_FTYPE_MOSTLY_Q8_0:
                 case LLamaFtype.LLAMA_FTYPE_MOSTLY_F16:
                 case LLamaFtype.LLAMA_FTYPE_ALL_F32:
+
+                case LLamaFtype.LLAMA_FTYPE_MOSTLY_Q2_K_S:
                 case LLamaFtype.LLAMA_FTYPE_MOSTLY_Q2_K:
+
+                case LLamaFtype.LLAMA_FTYPE_MOSTLY_Q3_K_XS:
                 case LLamaFtype.LLAMA_FTYPE_MOSTLY_Q3_K_S:
                 case LLamaFtype.LLAMA_FTYPE_MOSTLY_Q3_K_M:
                 case LLamaFtype.LLAMA_FTYPE_MOSTLY_Q3_K_L:
+
                 case LLamaFtype.LLAMA_FTYPE_MOSTLY_Q4_K_S:
                 case LLamaFtype.LLAMA_FTYPE_MOSTLY_Q4_K_M:
+
                 case LLamaFtype.LLAMA_FTYPE_MOSTLY_Q5_K_S:
                 case LLamaFtype.LLAMA_FTYPE_MOSTLY_Q5_K_M:
+
                 case LLamaFtype.LLAMA_FTYPE_MOSTLY_Q6_K:
+
+                case LLamaFtype.LLAMA_FTYPE_MOSTLY_IQ2_XXS:
+                case LLamaFtype.LLAMA_FTYPE_MOSTLY_IQ2_XS:
+
+                case LLamaFtype.LLAMA_FTYPE_MOSTLY_IQ3_XXS:
                     return true;
 
                 case LLamaFtype.LLAMA_FTYPE_MOSTLY_Q4_1_SOME_F16:

@@ -1,6 +1,4 @@
-﻿using System.Security.Cryptography;
-using LLama.Common;
-using Microsoft.SemanticKernel.AI.ChatCompletion;
+﻿using LLama.Common;
 using LLamaSharp.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.ChatCompletion;
 
@@ -10,9 +8,11 @@ namespace LLama.Examples.Examples
     {
         public static async Task Run()
         {
-            Console.WriteLine("Example from: https://github.com/microsoft/semantic-kernel/blob/main/dotnet/samples/KernelSyntaxExamples/Example17_ChatGPT.cs");
-            Console.Write("Please input your model path: ");
-            var modelPath = Console.ReadLine();
+            string modelPath = UserSettings.GetModelPath();
+
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("This example is from: \n" +
+                "https://github.com/microsoft/semantic-kernel/blob/main/dotnet/samples/KernelSyntaxExamples/Example17_ChatGPT.cs");
 
             // Load weights into memory
             var parameters = new ModelParams(modelPath);
@@ -21,7 +21,8 @@ namespace LLama.Examples.Examples
 
             var chatGPT = new LLamaSharpChatCompletion(ex);
 
-            var chatHistory = chatGPT.CreateNewChat("This is a conversation between the assistant and the user. \n\n You are a librarian, expert about books. ");
+            var chatHistory = chatGPT.CreateNewChat("This is a conversation between the " +
+                "assistant and the user. \n\n You are a librarian, expert about books. ");
 
             Console.WriteLine("Chat content:");
             Console.WriteLine("------------------------");
@@ -35,7 +36,8 @@ namespace LLama.Examples.Examples
             await MessageOutputAsync(chatHistory);
 
             // Second user message
-            chatHistory.AddUserMessage("I love history and philosophy, I'd like to learn something new about Greece, any suggestion");
+            chatHistory.AddUserMessage("I love history and philosophy, I'd like to learn " +
+                "something new about Greece, any suggestion");
             await MessageOutputAsync(chatHistory);
 
             // Second bot assistant message

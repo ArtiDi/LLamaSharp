@@ -4,13 +4,12 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 
 namespace LLama.Native
 {
-    public partial class NativeApi
+    public static partial class NativeApi
     {
         static NativeApi()
         {
@@ -36,8 +35,12 @@ namespace LLama.Native
 
         private static void Log(string message, LogLevel level)
         {
-            if (!enableLogging) return;
-            Debug.Assert(level is LogLevel.Information or LogLevel.Error or LogLevel.Warning);
+            if (!enableLogging)
+                return;
+
+            if ((int)level < (int)logLevel)
+                return;
+
             ConsoleColor color;
             string levelPrefix;
             if (level == LogLevel.Information)
@@ -97,22 +100,13 @@ namespace LLama.Native
             }
 
             if (string.IsNullOrEmpty(version))
-            {
                 return -1;
-            }
-            else
-            {
-                version = version.Split('.')[0];
-                bool success = int.TryParse(version, out var majorVersion);
-                if (success)
-                {
-                    return majorVersion;
-                }
-                else
-                {
-                    return -1;
-                }
-            }
+
+            version = version.Split('.')[0];
+            if (int.TryParse(version, out var majorVersion))
+                return majorVersion;
+
+            return -1;
         }
 
         private static string GetCudaVersionFromPath(string cudaPath)
@@ -129,7 +123,7 @@ namespace LLama.Native
                     {
                         return string.Empty;
                     }
-                    return versionNode.GetString();
+                    return versionNode.GetString() ?? "";
                 }
             }
             catch (Exception)
@@ -139,48 +133,47 @@ namespace LLama.Native
         }
 
 #if NET6_0_OR_GREATER
-        private static string GetAvxLibraryPath(NativeLibraryConfig.AvxLevel avxLevel, string prefix, string suffix)
+        private static string GetAvxLibraryPath(NativeLibraryConfig.AvxLevel avxLevel, string prefix, string suffix, string libraryNamePrefix)
         {
             var avxStr = NativeLibraryConfig.AvxLevelToString(avxLevel);
             if (!string.IsNullOrEmpty(avxStr))
             {
                 avxStr += "/";
             }
-            return $"{prefix}{avxStr}{libraryName}{suffix}";
+            return $"{prefix}{avxStr}{libraryNamePrefix}{libraryName}{suffix}";
         }
 
         private static List<string> GetLibraryTryOrder(NativeLibraryConfig.Description configuration)
         {
             OSPlatform platform;
-            string prefix, suffix;
+            string prefix, suffix, libraryNamePrefix;
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 platform = OSPlatform.Windows;
                 prefix = "runtimes/win-x64/native/";
                 suffix = ".dll";
+                libraryNamePrefix = "";
             }
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
                 platform = OSPlatform.Linux;
                 prefix = "runtimes/linux-x64/native/";
                 suffix = ".so";
+                libraryNamePrefix = "lib";
             }
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             {
                 platform = OSPlatform.OSX;
                 suffix = ".dylib";
-                if (System.Runtime.Intrinsics.Arm.ArmBase.Arm64.IsSupported)
-                {
-                    prefix = "runtimes/osx-arm64/native/";
-                }
-                else
-                {
-                    prefix = "runtimes/osx-x64/native/";
-                }
+
+                prefix = System.Runtime.Intrinsics.Arm.ArmBase.Arm64.IsSupported
+                       ? "runtimes/osx-arm64/native/"
+                       : "runtimes/osx-x64/native/";
+                libraryNamePrefix = "lib";
             }
             else
             {
-                throw new RuntimeError($"Your system plarform is not supported, please open an issue in LLamaSharp.");
+                throw new RuntimeError("Your system plarform is not supported, please open an issue in LLamaSharp.");
             }
             Log($"Detected OS Platform: {platform}", LogLevel.Information);
 
@@ -195,8 +188,8 @@ namespace LLama.Native
                     // if check skipped, we just try to load cuda libraries one by one.
                     if (configuration.SkipCheck)
                     {
-                        result.Add($"{prefix}cuda12/{libraryName}{suffix}");
-                        result.Add($"{prefix}cuda11/{libraryName}{suffix}");
+                        result.Add($"{prefix}cuda12/{libraryNamePrefix}{libraryName}{suffix}");
+                        result.Add($"{prefix}cuda11/{libraryNamePrefix}{libraryName}{suffix}");
                     }
                     else
                     {
@@ -206,12 +199,12 @@ namespace LLama.Native
                 else if (cudaVersion == 11)
                 {
                     Log($"Detected cuda major version {cudaVersion}.", LogLevel.Information);
-                    result.Add($"{prefix}cuda11/{libraryName}{suffix}");
+                    result.Add($"{prefix}cuda11/{libraryNamePrefix}{libraryName}{suffix}");
                 }
                 else if (cudaVersion == 12)
                 {
                     Log($"Detected cuda major version {cudaVersion}.", LogLevel.Information);
-                    result.Add($"{prefix}cuda12/{libraryName}{suffix}");
+                    result.Add($"{prefix}cuda12/{libraryNamePrefix}{libraryName}{suffix}");
                 }
                 else if (cudaVersion > 0)
                 {
@@ -223,25 +216,25 @@ namespace LLama.Native
             // use cpu (or mac possibly with metal)
             if (!configuration.AllowFallback && platform != OSPlatform.OSX)
             {
-                result.Add(GetAvxLibraryPath(configuration.AvxLevel, prefix, suffix));
+                result.Add(GetAvxLibraryPath(configuration.AvxLevel, prefix, suffix, libraryNamePrefix));
             }
             else if (platform != OSPlatform.OSX) // in macos there's absolutely no avx
             {
                 if (configuration.AvxLevel >= NativeLibraryConfig.AvxLevel.Avx512)
-                    result.Add(GetAvxLibraryPath(NativeLibraryConfig.AvxLevel.Avx512, prefix, suffix));
+                    result.Add(GetAvxLibraryPath(NativeLibraryConfig.AvxLevel.Avx512, prefix, suffix, libraryNamePrefix));
 
                 if (configuration.AvxLevel >= NativeLibraryConfig.AvxLevel.Avx2)
-                    result.Add(GetAvxLibraryPath(NativeLibraryConfig.AvxLevel.Avx2, prefix, suffix));
-                
-                if (configuration.AvxLevel >= NativeLibraryConfig.AvxLevel.Avx)
-                    result.Add(GetAvxLibraryPath(NativeLibraryConfig.AvxLevel.Avx, prefix, suffix));
+                    result.Add(GetAvxLibraryPath(NativeLibraryConfig.AvxLevel.Avx2, prefix, suffix, libraryNamePrefix));
 
-                result.Add(GetAvxLibraryPath(NativeLibraryConfig.AvxLevel.None, prefix, suffix));
+                if (configuration.AvxLevel >= NativeLibraryConfig.AvxLevel.Avx)
+                    result.Add(GetAvxLibraryPath(NativeLibraryConfig.AvxLevel.Avx, prefix, suffix, libraryNamePrefix));
+
+                result.Add(GetAvxLibraryPath(NativeLibraryConfig.AvxLevel.None, prefix, suffix, libraryNamePrefix));
             }
 
             if (platform == OSPlatform.OSX)
             {
-                result.Add($"{prefix}{libraryName}{suffix}");
+                result.Add($"{prefix}{libraryNamePrefix}{libraryName}{suffix}");
             }
 
             return result;
@@ -257,6 +250,7 @@ namespace LLama.Native
 #if NET6_0_OR_GREATER
             var configuration = NativeLibraryConfig.CheckAndGatherDescription();
             enableLogging = configuration.Logging;
+            logLevel = configuration.LogLevel;
             // We move the flag to avoid loading library when the variable is called else where.
             NativeLibraryConfig.LibraryHasLoaded = true;
             Log(configuration.ToString(), LogLevel.Information);
@@ -275,15 +269,15 @@ namespace LLama.Native
 
             var libraryTryLoadOrder = GetLibraryTryOrder(configuration);
 
-            string[] preferredPaths = configuration.SearchDirectories;
-            string[] possiblePathPrefix = new string[] {
-                System.AppDomain.CurrentDomain.BaseDirectory,
+            var preferredPaths = configuration.SearchDirectories;
+            var possiblePathPrefix = new[] {
+                AppDomain.CurrentDomain.BaseDirectory,
                 Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? ""
             };
 
-            var tryFindPath = (string filename) =>
+            string TryFindPath(string filename)
             {
-                foreach(var path in preferredPaths)
+                foreach (var path in preferredPaths)
                 {
                     if (File.Exists(Path.Combine(path, filename)))
                     {
@@ -291,7 +285,7 @@ namespace LLama.Native
                     }
                 }
 
-                foreach(var path in possiblePathPrefix)
+                foreach (var path in possiblePathPrefix)
                 {
                     if (File.Exists(Path.Combine(path, filename)))
                     {
@@ -300,21 +294,19 @@ namespace LLama.Native
                 }
 
                 return filename;
-            };
+            }
 
             foreach (var libraryPath in libraryTryLoadOrder)
             {
-                var fullPath = tryFindPath(libraryPath);
+                var fullPath = TryFindPath(libraryPath);
                 var result = TryLoad(fullPath, true);
                 if (result is not null && result != IntPtr.Zero)
                 {
                     Log($"{fullPath} is selected and loaded successfully.", LogLevel.Information);
-                    return result ?? IntPtr.Zero;
+                    return (IntPtr)result;
                 }
-                else
-                {
-                    Log($"Tried to load {fullPath} but failed.", LogLevel.Information);
-                }
+
+                Log($"Tried to load {fullPath} but failed.", LogLevel.Information);
             }
 
             if (!configuration.AllowFallback)
@@ -345,9 +337,10 @@ namespace LLama.Native
 #endif
         }
 
-        private const string libraryName = "libllama";
+        internal const string libraryName = "llama";
         private const string cudaVersionFile = "version.json";
         private const string loggingPrefix = "[LLamaSharp Native]";
         private static bool enableLogging = false;
+        private static LLamaLogLevel logLevel = LLamaLogLevel.Info;
     }
 }

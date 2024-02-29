@@ -29,10 +29,12 @@ namespace LLama.Native
         private bool _allowFallback = true;
         private bool _skipCheck = false;
         private bool _logging = false;
+        private LLamaLogLevel _logLevel = LLamaLogLevel.Info;
+
         /// <summary>
         /// search directory -> priority level, 0 is the lowest.
         /// </summary>
-        private List<string> _searchDirectories = new List<string>();
+        private readonly List<string> _searchDirectories = new List<string>();
 
         private static void ThrowIfLoaded()
         {
@@ -118,11 +120,26 @@ namespace LLama.Native
         /// <param name="enable"></param>
         /// <returns></returns>
         /// <exception cref="InvalidOperationException">Thrown if `LibraryHasLoaded` is true.</exception>
-        public NativeLibraryConfig WithLogs(bool enable = true)
+        public NativeLibraryConfig WithLogs(bool enable)
         {
             ThrowIfLoaded();
 
             _logging = enable;
+            return this;
+        }
+
+        /// <summary>
+        /// Enable console logging with the specified log logLevel.
+        /// </summary>
+        /// <param name="logLevel"></param>
+        /// <returns></returns>
+        /// <exception cref="InvalidOperationException">Thrown if `LibraryHasLoaded` is true.</exception>
+        public NativeLibraryConfig WithLogs(LLamaLogLevel logLevel = LLamaLogLevel.Info)
+        {
+            ThrowIfLoaded();
+
+            _logging = true;
+            _logLevel = logLevel;
             return this;
         }
 
@@ -159,17 +176,18 @@ namespace LLama.Native
         internal static Description CheckAndGatherDescription()
         {
             if (Instance._allowFallback && Instance._skipCheck)
-            {
                 throw new ArgumentException("Cannot skip the check when fallback is allowed.");
-            }
+
             return new Description(
-                Instance._libraryPath, 
-                Instance._useCuda, 
-                Instance._avxLevel, 
-                Instance._allowFallback, 
-                Instance._skipCheck, 
-                Instance._logging, 
-                Instance._searchDirectories.Concat(new string[] { "./" }).ToArray());
+                Instance._libraryPath,
+                Instance._useCuda,
+                Instance._avxLevel,
+                Instance._allowFallback,
+                Instance._skipCheck,
+                Instance._logging,
+                Instance._logLevel,
+                Instance._searchDirectories.Concat(new[] { "./" }).ToArray()
+            );
         }
 
         internal static string AvxLevelToString(AvxLevel level)
@@ -204,7 +222,9 @@ namespace LLama.Native
             if (!System.Runtime.Intrinsics.X86.X86Base.IsSupported)
                 return false;
 
+            // ReSharper disable UnusedVariable (ebx is used when < NET8)
             var (_, ebx, ecx, _) = System.Runtime.Intrinsics.X86.X86Base.CpuId(7, 0);
+            // ReSharper restore UnusedVariable
 
             var vnni = (ecx & 0b_1000_0000_0000) != 0;
 
@@ -247,7 +267,7 @@ namespace LLama.Native
             Avx512,
         }
 
-        internal record Description(string Path, bool UseCuda, AvxLevel AvxLevel, bool AllowFallback, bool SkipCheck, bool Logging, string[] SearchDirectories)
+        internal record Description(string Path, bool UseCuda, AvxLevel AvxLevel, bool AllowFallback, bool SkipCheck, bool Logging, LLamaLogLevel LogLevel, string[] SearchDirectories)
         {
             public override string ToString()
             {
@@ -260,7 +280,7 @@ namespace LLama.Native
                     _ => "Unknown"
                 };
 
-                string searchDirectoriesString = "{ " +  string.Join(", ", SearchDirectories) + " }";
+                string searchDirectoriesString = "{ " + string.Join(", ", SearchDirectories) + " }";
 
                 return $"NativeLibraryConfig Description:\n" +
                        $"- Path: {Path}\n" +
@@ -269,9 +289,10 @@ namespace LLama.Native
                        $"- AllowFallback: {AllowFallback}\n" +
                        $"- SkipCheck: {SkipCheck}\n" +
                        $"- Logging: {Logging}\n" +
+                       $"- LogLevel: {LogLevel}\n" +
                        $"- SearchDirectories and Priorities: {searchDirectoriesString}";
             }
         }
     }
 #endif
-        }
+}

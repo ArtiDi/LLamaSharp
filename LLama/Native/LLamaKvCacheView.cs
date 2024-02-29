@@ -14,7 +14,7 @@ public struct LLamaKvCacheViewCell
     /// May be negative if the cell is not populated.
     /// </summary>
     public LLamaPos pos;
-};
+}
 
 /// <summary>
 /// An updateable view of the KV cache (llama_kv_cache_view)
@@ -74,7 +74,7 @@ public class LLamaKvCacheViewSafeHandle
     }
 
     /// <summary>
-    /// Allocate a new llama_kv_cache_view_free
+    /// Allocate a new KV cache view which can be used to inspect the KV cache
     /// </summary>
     /// <param name="ctx"></param>
     /// <param name="maxSequences">The maximum number of sequences visible in this view per cell</param>
@@ -103,24 +103,6 @@ public class LLamaKvCacheViewSafeHandle
     }
 
     /// <summary>
-    /// Count the number of used cells in the KV cache
-    /// </summary>
-    /// <returns></returns>
-    public int CountCells()
-    {
-        return NativeApi.llama_get_kv_cache_used_cells(_ctx);
-    }
-
-    /// <summary>
-    /// Count the number of tokens in the KV cache. If a token is assigned to multiple sequences it will be countered multiple times
-    /// </summary>
-    /// <returns></returns>
-    public int CountTokens()
-    {
-        return NativeApi.llama_get_kv_cache_token_count(_ctx);
-    }
-
-    /// <summary>
     /// Get the raw KV cache view
     /// </summary>
     /// <returns></returns>
@@ -130,7 +112,7 @@ public class LLamaKvCacheViewSafeHandle
     }
 }
 
-partial class NativeApi
+public static partial class NativeApi
 {
     /// <summary>
     /// Create an empty KV cache view. (use only for debugging purposes)

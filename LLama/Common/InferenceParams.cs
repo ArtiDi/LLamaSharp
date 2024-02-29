@@ -6,8 +6,6 @@ using LLama.Sampling;
 
 namespace LLama.Common
 {
-    using llama_token = Int32;
-
     /// <summary>
     /// The paramters used for inference.
     /// </summary>
@@ -18,15 +16,17 @@ namespace LLama.Common
         /// number of tokens to keep from initial prompt
         /// </summary>
         public int TokensKeep { get; set; } = 0;
+
         /// <summary>
         /// how many new tokens to predict (n_predict), set to -1 to inifinitely generate response
         /// until it complete.
         /// </summary>
         public int MaxTokens { get; set; } = -1;
+
         /// <summary>
         /// logit bias for specific tokens
         /// </summary>
-        public Dictionary<llama_token, float>? LogitBias { get; set; } = null;
+        public Dictionary<LLamaToken, float>? LogitBias { get; set; } = null;
 
         /// <summary>
         /// Sequences where the model will stop generating further tokens.

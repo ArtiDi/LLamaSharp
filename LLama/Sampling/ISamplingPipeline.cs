@@ -19,12 +19,25 @@ public interface ISamplingPipeline
     /// <param name="logits">The logits produced by the model</param>
     /// <param name="lastTokens">A span of tokens recently returned by the model</param>
     /// <returns></returns>
-    int Sample(SafeLLamaContextHandle ctx, Span<float> logits, ReadOnlySpan<int> lastTokens);
+    LLamaToken Sample(SafeLLamaContextHandle ctx, ReadOnlySpan<float> logits, ReadOnlySpan<LLamaToken> lastTokens);
+
+    /// <summary>
+    /// Update the pipeline, with knowledge that a particular token was just accepted
+    /// </summary>
+    /// <param name="ctx"></param>
+    /// <param name="token"></param>
+    void Accept(SafeLLamaContextHandle ctx, LLamaToken token);
 
     /// <summary>
     /// Reset all internal state of the sampling pipeline
     /// </summary>
     void Reset();
+
+    /// <summary>
+    /// Create a copy of this sampling pipeline
+    /// </summary>
+    /// <returns></returns>
+    ISamplingPipeline Clone();
 }
 
 /// <summary>
@@ -40,13 +53,13 @@ public static class ISamplingPipelineExtensions
     /// <param name="logits">The logits produced by the model</param>
     /// <param name="lastTokens">A list of tokens recently returned by the model</param>
     /// <returns></returns>
-    public static int Sample(this ISamplingPipeline pipeline, SafeLLamaContextHandle ctx, Span<float> logits, List<int> lastTokens)
+    public static LLamaToken Sample(this ISamplingPipeline pipeline, SafeLLamaContextHandle ctx, ReadOnlySpan<float> logits, List<LLamaToken> lastTokens)
     {
 #if NET5_0_OR_GREATER
         var span = CollectionsMarshal.AsSpan(lastTokens);
         return pipeline.Sample(ctx, logits, span);
 #else
-        var copy = ArrayPool<int>.Shared.Rent(lastTokens.Count);
+        var copy = ArrayPool<LLamaToken>.Shared.Rent(lastTokens.Count);
         try
         {
             lastTokens.CopyTo(copy);
@@ -54,7 +67,7 @@ public static class ISamplingPipelineExtensions
         }
         finally
         {
-            ArrayPool<int>.Shared.Return(copy);
+            ArrayPool<LLamaToken>.Shared.Return(copy);
         }
 #endif
     }

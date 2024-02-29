@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Text;
 using LLama.Abstractions;
 using LLama.Extensions;
 using LLama.Native;
@@ -42,17 +43,17 @@ namespace LLama
         /// <summary>
         /// Get the newline token for this model
         /// </summary>
-        public int NewlineToken => NativeApi.llama_token_nl(NativeHandle);
+        public LLamaToken NewlineToken => NativeApi.llama_token_nl(NativeHandle);
 
         /// <summary>
         /// Get the "end of sentence" token for this model
         /// </summary>
-        public int EndOfSentenceToken => NativeApi.llama_token_eos(NativeHandle);
+        public LLamaToken EndOfSentenceToken => NativeApi.llama_token_eos(NativeHandle);
 
         /// <summary>
         /// Get the "beginning of sentence" token for this model
         /// </summary>
-        public int BeginningOfSentenceToken => NativeApi.llama_token_bos(NativeHandle);
+        public LLamaToken BeginningOfSentenceToken => NativeApi.llama_token_bos(NativeHandle);
 
         /// <summary>
         /// Dimension of embedding vectors
@@ -64,7 +65,7 @@ namespace LLama
         /// </summary>
         public IReadOnlyDictionary<string, string> Metadata { get; set; }
 
-        internal LLamaWeights(SafeLlamaModelHandle weights)
+        private LLamaWeights(SafeLlamaModelHandle weights)
         {
             NativeHandle = weights;
             Metadata = weights.ReadMetadata();
@@ -108,6 +109,19 @@ namespace LLama
         public LLamaContext CreateContext(IContextParams @params, ILogger? logger = null)
         {
             return new LLamaContext(this, @params, logger);
+        }
+
+        /// <summary>
+        /// Convert a string of text into tokens
+        /// </summary>
+        /// <param name="text"></param>
+        /// <param name="add_bos"></param>
+        /// <param name="encoding"></param>
+        /// <param name="special">Allow tokenizing special and/or control tokens which otherwise are not exposed and treated as plaintext.</param>
+        /// <returns></returns>
+        public LLamaToken[] Tokenize(string text, bool add_bos, bool special, Encoding encoding)
+        {
+            return NativeHandle.Tokenize(text, add_bos, special, encoding);
         }
     }
 }
